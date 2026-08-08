@@ -17,14 +17,17 @@ public class UrlMapping {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "short_code", unique = true, length = 32)
+    @Column(name = "short_code", nullable = false, unique = true, length = 32)
     private String shortCode;
 
-    @Column(name = "original_url", columnDefinition = "TEXT")
+    @Column(name = "original_url", nullable = false, columnDefinition = "TEXT")
     private String originalUrl;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    @Column(name = "disabled_at")
+    private Instant disabledAt;
 
     @PrePersist
     void prePersist() {
@@ -53,5 +56,13 @@ public class UrlMapping {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public Instant getDisabledAt() {
+        return disabledAt;
+    }
+
+    public void setDisabledAt(Instant disabledAt) {
+        this.disabledAt = disabledAt;
     }
 }

@@ -1,7 +1,12 @@
 package com.example.urlshorten.dto;
 
+import java.time.Instant;
+
 public record ShortUrlResponse(
         String shortCode,
-        String originalUrl
+        String shortUrl,
+        String originalUrl,
+        boolean reused,
+        Instant createdAt
 ) {
 }

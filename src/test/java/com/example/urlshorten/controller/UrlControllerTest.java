@@ -1,15 +1,24 @@
 package com.example.urlshorten.controller;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.urlshorten.dto.ShortUrlResponse;
+import com.example.urlshorten.exception.ResourceNotFoundException;
 import com.example.urlshorten.service.UrlService;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(UrlController.class)
@@ -22,10 +31,82 @@ class UrlControllerTest {
     private UrlService urlService;
 
     @Test
-    void health_returnsOkPayload() throws Exception {
-        when(urlService.health()).thenReturn("ok");
+        void createShortUrl_returnsCreated() throws Exception {
+        ShortUrlResponse response = new ShortUrlResponse(
+            "abc123",
+            "http://localhost:8080/abc123",
+            "https://example.com",
+            false,
+            Instant.now()
+        );
 
-        mockMvc.perform(get("/api/urls/health"))
+        when(urlService.createShortUrl(any())).thenReturn(response);
+
+        mockMvc.perform(post("/api/urls")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"originalUrl\":\"https://example.com\"}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.shortCode").value("abc123"));
+        }
+
+        @Test
+        void createShortUrl_returnsOkWhenReused() throws Exception {
+        ShortUrlResponse response = new ShortUrlResponse(
+            "abc123",
+            "http://localhost:8080/abc123",
+            "https://example.com",
+            true,
+            Instant.now()
+        );
+
+        when(urlService.createShortUrl(any())).thenReturn(response);
+
+        mockMvc.perform(post("/api/urls")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"originalUrl\":\"https://example.com\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.reused").value(true));
+        }
+
+        @Test
+        void redirect_returnsFoundLocationHeader() throws Exception {
+        when(urlService.resolveOriginalUrl("abc123")).thenReturn("https://example.com");
+
+        mockMvc.perform(get("/abc123"))
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", "https://example.com"));
+        }
+
+        @Test
+        void disableShortUrl_returnsNoContent() throws Exception {
+        mockMvc.perform(delete("/api/urls/abc123"))
+            .andExpect(status().isNoContent());
+        }
+
+        @Test
+        void redirect_returnsNotFoundWhenMissing() throws Exception {
+        when(urlService.resolveOriginalUrl("missing"))
+            .thenThrow(new ResourceNotFoundException("Short URL not found"));
+
+        mockMvc.perform(get("/missing"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.message").value("Short URL not found"));
+        }
+
+        @Test
+        void disableShortUrl_returnsNotFoundWhenMissing() throws Exception {
+        doThrow(new ResourceNotFoundException("Short URL not found"))
+            .when(urlService).disableByCode("missing");
+
+        mockMvc.perform(delete("/api/urls/missing"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.message").value("Short URL not found"));
+        }
+
+        @Test
+        void health_returnsOkPayload() throws Exception {
+
+        mockMvc.perform(get("/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.module").value("controller"))
                 .andExpect(jsonPath("$.service").value("ok"))
