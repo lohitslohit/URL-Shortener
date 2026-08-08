@@ -93,7 +93,7 @@ public class UrlServiceImpl implements UrlService {
         return normalizedUrl;
     }
 
-    private ShortUrlResponse toResponse(UrlMapping mapping, boolean reused) {
+    protected ShortUrlResponse toResponse(UrlMapping mapping, boolean reused) {
         return new ShortUrlResponse(
                 mapping.getShortCode(),
                 baseUrl + "/" + mapping.getShortCode(),
