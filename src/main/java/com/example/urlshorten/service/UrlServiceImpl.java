@@ -7,19 +7,21 @@ import com.example.urlshorten.model.UrlMapping;
 import com.example.urlshorten.repository.UrlRepository;
 import java.security.SecureRandom;
 import java.time.Instant;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@ConditionalOnProperty(name = "app.short-code.strategy", havingValue = "random", matchIfMissing = true)
 public class UrlServiceImpl implements UrlService {
 
     private static final char[] ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".toCharArray();
     private static final int CODE_LENGTH = 7;
     private static final int MAX_GENERATION_ATTEMPTS = 20;
 
-    private final UrlRepository repository;
-    private final String baseUrl;
+    protected final UrlRepository repository;
+    protected final String baseUrl;
     private final SecureRandom random = new SecureRandom();
 
     public UrlServiceImpl(UrlRepository repository, @Value("${app.base-url:http://localhost:8080}") String baseUrl) {
@@ -31,10 +33,11 @@ public class UrlServiceImpl implements UrlService {
     @Transactional
     public ShortUrlResponse createShortUrl(CreateShortUrlRequest request) {
         String normalizedUrl = request.originalUrl().trim();
+        String lookupUrl = normalizeForLookup(normalizedUrl);
 
-        return repository.findByOriginalUrlAndDisabledAtIsNull(normalizedUrl)
+        return repository.findByOriginalUrlAndDisabledAtIsNull(lookupUrl)
                 .map(existing -> toResponse(existing, true))
-                .orElseGet(() -> createNewMapping(normalizedUrl));
+            .orElseGet(() -> createNewMapping(lookupUrl));
     }
 
     @Override
@@ -55,16 +58,20 @@ public class UrlServiceImpl implements UrlService {
         repository.save(mapping);
     }
 
-    private ShortUrlResponse createNewMapping(String normalizedUrl) {
+    protected ShortUrlResponse createNewMapping(String normalizedUrl) {
         UrlMapping mapping = new UrlMapping();
         mapping.setOriginalUrl(normalizedUrl);
-        mapping.setShortCode(generateUniqueShortCode());
+        mapping.setShortCode(generateShortCode(normalizedUrl));
 
         UrlMapping saved = repository.save(mapping);
         return toResponse(saved, false);
     }
 
-    private String generateUniqueShortCode() {
+    protected String generateShortCode(String normalizedUrl) {
+        return generateUniqueShortCode();
+    }
+
+    protected String generateUniqueShortCode() {
         for (int i = 0; i < MAX_GENERATION_ATTEMPTS; i++) {
             String candidate = randomCode(CODE_LENGTH);
             if (!repository.existsByShortCode(candidate)) {
@@ -74,12 +81,16 @@ public class UrlServiceImpl implements UrlService {
         throw new IllegalStateException("Failed to generate unique short code");
     }
 
-    private String randomCode(int length) {
+    protected String randomCode(int length) {
         StringBuilder code = new StringBuilder(length);
         for (int i = 0; i < length; i++) {
             code.append(ALPHABET[random.nextInt(ALPHABET.length)]);
         }
         return code.toString();
+    }
+
+    protected String normalizeForLookup(String normalizedUrl) {
+        return normalizedUrl;
     }
 
     private ShortUrlResponse toResponse(UrlMapping mapping, boolean reused) {

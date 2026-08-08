@@ -1,53 +1,126 @@
 # URL Shortener (Spring Boot + PostgreSQL)
 
-Step 2: API design and implementation baseline.
+A minimal URL shortener API built with Spring Boot, Spring Data JPA, and PostgreSQL.
 
-This repository includes a minimal and clean layered implementation:
+## Features
+
+- Create short URLs
+- Reuse existing active short URL for duplicate input
+- Redirect short code to original URL
+- Disable short URLs
+- Global API error handling
+- Unit and controller tests
+- Configurable short-code strategy:
+	- Random strategy
+	- Hash strategy (canonicalize URL + hash + base62)
+
+## Architecture
+
 - Controller layer
 - Service layer
-- Repository layer
+- Repository layer (Spring Data JPA derived queries)
 - DTOs
-- Global exception handling
-- Basic unit and web tests
+- Exception handling
 
-## API Design
+## API
 
 ### 1) Create short URL
-- `POST /api/urls`
-- Request body:
-	- `originalUrl` (required, must start with `http://` or `https://`)
+
+- Method: POST
+- Path: /api/urls
+- Request JSON:
+
+```json
+{
+	"originalUrl": "https://example.com/some/path"
+}
+```
+
 - Behavior:
-	- Returns `201 Created` when a new short code is generated
-	- Returns `200 OK` when same URL already exists (duplicate reuse)
+	- 201 Created when a new mapping is generated
+	- 200 OK when an active mapping already exists (reused=true)
 
 ### 2) Redirect by short code
-- `GET /{code}`
+
+- Method: GET
+- Path: /{code}
 - Behavior:
-	- Returns `302 Found` with `Location` header when code exists and is active
-	- Returns `404 Not Found` when code does not exist or is disabled
+	- 302 Found with Location header when active code exists
+	- 404 Not Found when code is missing or disabled
 
 ### 3) Disable short URL
-- `DELETE /api/urls/{code}`
+
+- Method: DELETE
+- Path: /api/urls/{code}
 - Behavior:
-	- Returns `204 No Content` when disable succeeds
-	- Returns `404 Not Found` when code does not exist
+	- 204 No Content when disable succeeds
+	- 404 Not Found when code is missing
+
+### 4) Health
+
+- Method: GET
+- Path: /health
 
 ### Error payload
-- Errors use a shared response object with fields:
-	- `message`
-	- `path`
-	- `timestamp`
+
+Errors use this shape:
+
+```json
+{
+	"message": "...",
+	"path": "/...",
+	"timestamp": "..."
+}
+```
+
+## Configuration
+
+`src/main/resources/application.properties` supports:
+
+- DB_URL (default: jdbc:postgresql://localhost:5432/url_shorten)
+- DB_USERNAME (default: postgres)
+- DB_PASSWORD (default: sa)
+- SHORT_CODE_STRATEGY (default: random)
+- SHORT_CODE_HASH_LENGTH (default: 8)
+
+Application properties:
+
+- app.short-code.strategy
+	- random: random base62 code generation
+	- hash: canonicalize URL, hash, base62 encode, and trim to configured length
+- app.short-code.hash-length
+	- Length of generated hash-based short code
 
 ## Run
 
-1. Ensure PostgreSQL is running.
-2. Create database: `url_shorten`
-3. Set optional environment variables if needed:
-	- `DB_URL`
-	- `DB_USERNAME`
-	- `DB_PASSWORD`
-4. Run: `mvn spring-boot:run`
+1. Ensure PostgreSQL is running on localhost:5432.
+2. Create database url_shorten.
+3. Set environment variables if defaults do not match your local setup.
+4. Run:
+
+```bash
+mvn spring-boot:run
+```
+
+Example (PowerShell):
+
+```powershell
+$env:DB_USERNAME="postgres"
+$env:DB_PASSWORD="sa"
+$env:DB_URL="jdbc:postgresql://localhost:5432/url_shorten"
+$env:SHORT_CODE_STRATEGY="hash"
+$env:SHORT_CODE_HASH_LENGTH="8"
+mvn spring-boot:run
+```
 
 ## Test
 
-Run: `mvn test`
+```bash
+mvn test
+```
+
+## Notes
+
+- If startup says port 8080 is already in use, stop the process using that port or change server.port.
+- If startup shows authentication failure, verify DB_USERNAME/DB_PASSWORD.
+- In hash strategy, canonical-equivalent URLs (for example default HTTPS port and trailing slash differences) resolve to the same lookup URL.

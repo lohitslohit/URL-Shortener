@@ -12,7 +12,6 @@ import com.example.urlshorten.dto.ShortUrlResponse;
 import com.example.urlshorten.exception.ResourceNotFoundException;
 import com.example.urlshorten.model.UrlMapping;
 import com.example.urlshorten.repository.UrlRepository;
-import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
