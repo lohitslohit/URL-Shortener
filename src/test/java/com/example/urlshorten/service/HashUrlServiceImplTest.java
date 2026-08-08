@@ -2,6 +2,7 @@ package com.example.urlshorten.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -16,6 +17,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 @ExtendWith(MockitoExtension.class)
 class HashUrlServiceImplTest {
@@ -23,11 +27,16 @@ class HashUrlServiceImplTest {
     @Mock
     private UrlRepository repository;
 
+    @Mock
+    private PlatformTransactionManager transactionManager;
+
     private HashUrlServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new HashUrlServiceImpl(repository, "http://localhost:8080", 8);
+        lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class)))
+                .thenReturn(new SimpleTransactionStatus());
+        service = new HashUrlServiceImpl(repository, "http://localhost:8080", transactionManager, 8);
     }
 
     @Test

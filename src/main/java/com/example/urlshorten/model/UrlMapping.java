@@ -23,6 +23,13 @@ public class UrlMapping {
     @Column(name = "original_url", nullable = false, columnDefinition = "TEXT")
     private String originalUrl;
 
+    /**
+     * Equals {@link #originalUrl} while the mapping is active; cleared on disable so the same URL
+     * can be shortened again. Unique constraint prevents concurrent duplicate active mappings.
+     */
+    @Column(name = "active_original_url", unique = true, columnDefinition = "TEXT")
+    private String activeOriginalUrl;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -52,6 +59,14 @@ public class UrlMapping {
 
     public void setOriginalUrl(String originalUrl) {
         this.originalUrl = originalUrl;
+    }
+
+    public String getActiveOriginalUrl() {
+        return activeOriginalUrl;
+    }
+
+    public void setActiveOriginalUrl(String activeOriginalUrl) {
+        this.activeOriginalUrl = activeOriginalUrl;
     }
 
     public Instant getCreatedAt() {

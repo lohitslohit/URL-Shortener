@@ -3,6 +3,7 @@ package com.example.urlshorten.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -12,46 +13,56 @@ import com.example.urlshorten.dto.CreateShortUrlRequest;
 import com.example.urlshorten.dto.ShortUrlResponse;
 import com.example.urlshorten.model.UrlMapping;
 import com.example.urlshorten.repository.UrlRepository;
+import com.example.urlshorten.util.Base62;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 @ExtendWith(MockitoExtension.class)
 class CounterUrlServiceImplTest {
 
+    private static final String CANONICAL_EXAMPLE = "https://example.com/";
+
     @Mock
     private UrlRepository repository;
+
+    @Mock
+    private PlatformTransactionManager transactionManager;
 
     private CounterUrlServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new CounterUrlServiceImpl(repository, "http://localhost:8080");
+        lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class)))
+                .thenReturn(new SimpleTransactionStatus());
+        service = new CounterUrlServiceImpl(repository, "http://localhost:8080", transactionManager);
     }
 
     @Test
     void base62Encode_knownValues() {
-        assertThat(CounterUrlServiceImpl.base62Encode(1)).isEqualTo("1");
-        assertThat(CounterUrlServiceImpl.base62Encode(62)).isEqualTo("10");
-        assertThat(CounterUrlServiceImpl.base62Encode(1_000_000_000L)).isEqualTo("15ftgG");
+        assertThat(Base62.encode(1)).isEqualTo("1");
+        assertThat(Base62.encode(62)).isEqualTo("10");
+        assertThat(Base62.encode(1_000_000_000L)).isEqualTo("15FTGg");
     }
 
     @Test
     void base62Encode_rejectsNonPositive() {
-        assertThatThrownBy(() -> CounterUrlServiceImpl.base62Encode(0))
+        assertThatThrownBy(() -> Base62.encode(0))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> CounterUrlServiceImpl.base62Encode(-1))
+        assertThatThrownBy(() -> Base62.encode(-1))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void createShortUrl_usesDbIdAsCounter() {
-        when(repository.findByOriginalUrlAndDisabledAtIsNull("https://example.com"))
+        when(repository.findByOriginalUrlAndDisabledAtIsNull(CANONICAL_EXAMPLE))
                 .thenReturn(Optional.empty());
-        // first save: DB assigns ID 42
         when(repository.save(any(UrlMapping.class))).thenAnswer(inv -> {
             UrlMapping m = inv.getArgument(0);
             if (m.getId() == null) {
@@ -62,29 +73,27 @@ class CounterUrlServiceImplTest {
 
         ShortUrlResponse response = service.createShortUrl(new CreateShortUrlRequest("https://example.com"));
 
-        assertThat(response.shortCode()).isEqualTo(CounterUrlServiceImpl.base62Encode(42L));
+        assertThat(response.shortCode()).isEqualTo(Base62.encode(42L));
         assertThat(response.reused()).isFalse();
-        // two saves: one to get the ID, one to persist the real short code
         verify(repository, times(2)).save(any(UrlMapping.class));
     }
 
     @Test
     void createShortUrl_reusesExistingMapping() {
         UrlMapping existing = new UrlMapping();
-        existing.setShortCode("15ftgG");
-        existing.setOriginalUrl("https://example.com");
+        existing.setShortCode("15FTGg");
+        existing.setOriginalUrl(CANONICAL_EXAMPLE);
 
-        when(repository.findByOriginalUrlAndDisabledAtIsNull("https://example.com"))
+        when(repository.findByOriginalUrlAndDisabledAtIsNull(CANONICAL_EXAMPLE))
                 .thenReturn(Optional.of(existing));
 
         ShortUrlResponse response = service.createShortUrl(new CreateShortUrlRequest("https://example.com"));
 
-        assertThat(response.shortCode()).isEqualTo("15ftgG");
+        assertThat(response.shortCode()).isEqualTo("15FTGg");
         assertThat(response.reused()).isTrue();
         verify(repository, never()).save(any());
     }
 
-    // UrlMapping.id has no public setter; set via reflection for test purposes
     private static void setId(UrlMapping mapping, Long id) {
         try {
             var field = UrlMapping.class.getDeclaredField("id");
