@@ -2,6 +2,7 @@ package com.example.urlshorten.controller;
 
 import com.example.urlshorten.dto.CreateShortUrlRequest;
 import com.example.urlshorten.dto.ShortUrlResponse;
+import com.example.urlshorten.dto.UrlStatsResponse;
 import com.example.urlshorten.service.UrlService;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -14,7 +15,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -26,7 +26,7 @@ public class UrlController {
         this.service = service;
     }
 
-    @PostMapping("/api/urls")
+    @PostMapping("/shorten")
     public ResponseEntity<ShortUrlResponse> createShortUrl(@Valid @RequestBody CreateShortUrlRequest request) {
         ShortUrlResponse response = service.createShortUrl(request);
         HttpStatus status = response.reused() ? HttpStatus.OK : HttpStatus.CREATED;
@@ -36,9 +36,14 @@ public class UrlController {
     @GetMapping("/{code}")
     public ResponseEntity<Void> redirect(@PathVariable("code") String shortCode) {
         String originalUrl = service.resolveOriginalUrl(shortCode);
-        return ResponseEntity.status(HttpStatus.FOUND)
+        return ResponseEntity.status(HttpStatus.MOVED_PERMANENTLY)
                 .header(HttpHeaders.LOCATION, URI.create(originalUrl).toString())
                 .build();
+    }
+
+    @GetMapping("/stats/{code}")
+    public ResponseEntity<UrlStatsResponse> stats(@PathVariable("code") String shortCode) {
+        return ResponseEntity.ok(service.getStats(shortCode));
     }
 
     @DeleteMapping("/api/urls/{code}")

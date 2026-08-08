@@ -1,129 +1,102 @@
-# URL Shortener (Spring Boot + PostgreSQL)
+# URL Shortener & Link Analytics (Spring Boot + PostgreSQL)
 
-A minimal URL shortener API built with Spring Boot, Spring Data JPA, and PostgreSQL.
+A small URL shortener that creates short codes, redirects with HTTP 301, supports custom aliases, and tracks click counts.
 
 ## Features
 
-- Create short URLs
-- Reuse existing active short URL for duplicate input
-- Redirect short code to original URL
-- Disable short URLs
-- Global API error handling
+- `POST /shorten` — create a short code for a long URL
+- `GET /{code}` — **301** redirect to the original URL
+- Custom aliases (optional)
+- Deliberate duplicate-URL handling (reuse active mapping)
+- Click analytics (`GET /stats/{code}`)
+- Soft-disable short URLs
+- Configurable short-code strategy: random, hash, or counter
+- URL validation and global API error handling
 - Unit and controller tests
-- Configurable short-code strategy:
-	- Random strategy
-	- Hash strategy (canonicalize URL + hash + base62)
-	- Counter strategy (DB sequence ID + base62)
 
-## Architecture
+## Design decisions (required by the take-home)
 
-- Controller layer
-- Service layer
-- Repository layer (Spring Data JPA derived queries)
-- DTOs
-- Exception handling
+### Duplicate URLs
+
+If an **active** mapping already exists for the same canonical URL, `POST /shorten` returns that short code with `reused: true` and HTTP **200** (no second active mapping). Canonicalization lowercases scheme/host, strips default ports, normalizes trailing slash, and drops fragments.
+
+After a short URL is disabled, the same long URL can be shortened again and may receive a **new** code.
+
+If a custom `alias` is supplied for a URL that already has an active mapping, the existing code is returned and the new alias is ignored.
+
+### Custom aliases
+
+Optional `alias` on create:
+
+- Base62 characters only (`0-9`, `a-z`, `A-Z`)
+- Length 3–32
+- Reserved: `api`, `health`, `urls`, `shorten`, `stats`
+- Taken aliases return **409 Conflict**
+
+### Short codes and collisions
+
+- **random** (default): 7-char Base62 from `SecureRandom`, retry until unique (DB unique on `short_code`)
+- **hash**: SHA-256 of canonical URL → Base62, trim; salt with `#n` on collision
+- **counter**: Base62 of DB row id (unique by construction)
 
 ## API
 
-### 1) Create short URL
-
-- Method: POST
-- Path: /api/urls
-- Request JSON:
+### 1) Shorten — `POST /shorten`
 
 ```json
 {
-	"originalUrl": "https://example.com/some/path"
+  "originalUrl": "https://example.com/some/path",
+  "alias": "docs"
 }
 ```
 
-- Behavior:
-	- 201 Created when a new mapping is generated
-	- 200 OK when an active mapping already exists (reused=true)
+`alias` is optional.
 
-### 2) Redirect by short code
+- **201 Created** — new mapping (`reused=false`)
+- **200 OK** — existing active mapping returned (`reused=true`)
+- **400** — invalid URL / alias
+- **409** — alias already taken
 
-- Method: GET
-- Path: /{code}
-- Behavior:
-	- 302 Found with Location header when active code exists
-	- 404 Not Found when code is missing or disabled
+### 2) Redirect — `GET /{code}`
 
-### 3) Disable short URL
+- **301 Moved Permanently** with `Location` header when active
+- **404** when missing or disabled  
+  Each successful redirect increments `clickCount`.
 
-- Method: DELETE
-- Path: /api/urls/{code}
-- Behavior:
-	- 204 No Content when disable succeeds
-	- 404 Not Found when code is missing
+### 3) Stats — `GET /stats/{code}`
 
-### 4) Health
+Returns short code, original URL, `clickCount`, `createdAt`, and `disabledAt` (if disabled).
 
-- Method: GET
-- Path: /health
+### 4) Disable — `DELETE /api/urls/{code}`
 
-### Error payload
+- **204** on success
+- **404** when missing / already disabled
 
-Errors use this shape:
-
-```json
-{
-	"message": "...",
-	"path": "/...",
-	"timestamp": "..."
-}
-```
-
-## Configuration
-
-`src/main/resources/application.properties` supports:
-
-- DB_URL (default: jdbc:postgresql://localhost:5432/url_shorten)
-- DB_USERNAME (default: postgres)
-- DB_PASSWORD (default: sa)
-- SHORT_CODE_STRATEGY (default: random)
-- SHORT_CODE_HASH_LENGTH (default: 8, hash strategy only)
-
-Application properties:
-
-- app.short-code.strategy
-	- random: random base62 code generation
-	- hash: canonicalize URL, hash, base62 encode, and trim to configured length
-	- counter: Base62-encodes the database row ID; guaranteed collision-free with no additional checks
-- app.short-code.hash-length
-	- Length of generated hash-based short code (hash strategy only)
+### 5) Health — `GET /health`
 
 ## Run
 
-1. Ensure PostgreSQL is running on localhost:5432.
-2. Create database url_shorten.
-3. Set environment variables if defaults do not match your local setup.
+1. PostgreSQL must be running on `localhost:5432` (default user `postgres` / password `sa`).
+2. On startup the app **creates the `url_shorten` database if missing**, then Hibernate **`ddl-auto=update` creates/updates tables** (e.g. `url_mappings`) from entities.
+3. Set env vars if needed (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`).
 4. Run:
 
 ```bash
 mvn spring-boot:run
 ```
 
-Example (PowerShell):
+PowerShell example:
 
 ```powershell
 $env:DB_USERNAME="postgres"
 $env:DB_PASSWORD="sa"
 $env:DB_URL="jdbc:postgresql://localhost:5432/url_shorten"
-$env:SHORT_CODE_STRATEGY="hash"
-$env:SHORT_CODE_HASH_LENGTH="8"
+$env:SHORT_CODE_STRATEGY="random"
 mvn spring-boot:run
 ```
 
-Counter strategy:
-
-```powershell
-$env:DB_USERNAME="postgres"
-$env:DB_PASSWORD="sa"
-$env:DB_URL="jdbc:postgresql://localhost:5432/url_shorten"
-$env:SHORT_CODE_STRATEGY="counter"
-mvn spring-boot:run
-```
+Strategies: `SHORT_CODE_STRATEGY=random|hash|counter`  
+Hash length: `SHORT_CODE_HASH_LENGTH` (default `8`).
 
 ## Test
 
@@ -131,9 +104,6 @@ mvn spring-boot:run
 mvn test
 ```
 
-## Notes
+## Write-up
 
-- If startup says port 8080 is already in use, stop the process using that port or change server.port.
-- If startup shows authentication failure, verify DB_USERNAME/DB_PASSWORD.
-- In hash strategy, canonical-equivalent URLs (for example default HTTPS port and trailing slash differences) resolve to the same lookup URL.
-- In counter strategy, each new URL gets a short code derived from its unique database row ID (Base62-encoded). At 1 billion URLs the code is 6 characters (`"15ftgG"`); at 62^6 ≈ 56 billion it grows to 7.
+See [WRITEUP.md](WRITEUP.md) for the required one-page exercise write-up.

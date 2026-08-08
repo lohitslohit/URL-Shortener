@@ -61,7 +61,7 @@ class CounterUrlServiceImplTest {
 
     @Test
     void createShortUrl_usesDbIdAsCounter() {
-        when(repository.findByOriginalUrlAndDisabledAtIsNull(CANONICAL_EXAMPLE))
+        when(repository.findByActiveOriginalUrl(CANONICAL_EXAMPLE))
                 .thenReturn(Optional.empty());
         when(repository.save(any(UrlMapping.class))).thenAnswer(inv -> {
             UrlMapping m = inv.getArgument(0);
@@ -84,7 +84,7 @@ class CounterUrlServiceImplTest {
         existing.setShortCode("15FTGg");
         existing.setOriginalUrl(CANONICAL_EXAMPLE);
 
-        when(repository.findByOriginalUrlAndDisabledAtIsNull(CANONICAL_EXAMPLE))
+        when(repository.findByActiveOriginalUrl(CANONICAL_EXAMPLE))
                 .thenReturn(Optional.of(existing));
 
         ShortUrlResponse response = service.createShortUrl(new CreateShortUrlRequest("https://example.com"));

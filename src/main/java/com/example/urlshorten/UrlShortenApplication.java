@@ -1,5 +1,6 @@
 package com.example.urlshorten;
 
+import com.example.urlshorten.config.PostgresDatabaseCreator;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -7,6 +8,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class UrlShortenApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(UrlShortenApplication.class, args);
+        SpringApplication app = new SpringApplication(UrlShortenApplication.class);
+        app.addListeners(new PostgresDatabaseCreator());
+        app.run(args);
     }
 }

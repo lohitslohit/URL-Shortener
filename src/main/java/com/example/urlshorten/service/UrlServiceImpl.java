@@ -2,6 +2,7 @@ package com.example.urlshorten.service;
 
 import com.example.urlshorten.dto.CreateShortUrlRequest;
 import com.example.urlshorten.dto.ShortUrlResponse;
+import com.example.urlshorten.dto.UrlStatsResponse;
 import com.example.urlshorten.exception.ConflictException;
 import com.example.urlshorten.exception.ResourceNotFoundException;
 import com.example.urlshorten.model.UrlMapping;
@@ -29,7 +30,7 @@ public class UrlServiceImpl implements UrlService {
     private static final int CODE_LENGTH = 7;
     private static final int MAX_GENERATION_ATTEMPTS = 20;
     private static final int MAX_CREATE_ATTEMPTS = 3;
-    private static final Set<String> RESERVED_ALIASES = Set.of("api", "health", "urls");
+    private static final Set<String> RESERVED_ALIASES = Set.of("api", "health", "urls", "shorten", "stats");
 
     protected final UrlRepository repository;
     protected final String baseUrl;
@@ -50,7 +51,7 @@ public class UrlServiceImpl implements UrlService {
     public ShortUrlResponse createShortUrl(CreateShortUrlRequest request) {
         String lookupUrl = normalizeForLookup(request.originalUrl().trim());
 
-        Optional<UrlMapping> existing = repository.findByOriginalUrlAndDisabledAtIsNull(lookupUrl);
+        Optional<UrlMapping> existing = repository.findByActiveOriginalUrl(lookupUrl);
         if (existing.isPresent()) {
             return toResponse(existing.get(), true);
         }
@@ -63,7 +64,7 @@ public class UrlServiceImpl implements UrlService {
                 return transactionTemplate.execute(status -> createNewMapping(lookupUrl, alias));
             } catch (DataIntegrityViolationException ex) {
                 lastConflict = ex;
-                Optional<UrlMapping> raced = repository.findByOriginalUrlAndDisabledAtIsNull(lookupUrl);
+                Optional<UrlMapping> raced = repository.findByActiveOriginalUrl(lookupUrl);
                 if (raced.isPresent()) {
                     return toResponse(raced.get(), true);
                 }
@@ -77,11 +78,21 @@ public class UrlServiceImpl implements UrlService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public String resolveOriginalUrl(String shortCode) {
         UrlMapping mapping = repository.findByShortCodeAndDisabledAtIsNull(shortCode)
                 .orElseThrow(() -> new ResourceNotFoundException("Short URL not found"));
+        mapping.setClickCount(mapping.getClickCount() + 1);
+        repository.save(mapping);
         return mapping.getOriginalUrl();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public UrlStatsResponse getStats(String shortCode) {
+        UrlMapping mapping = repository.findByShortCode(shortCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Short URL not found"));
+        return toStatsResponse(mapping);
     }
 
     @Override
@@ -183,7 +194,19 @@ public class UrlServiceImpl implements UrlService {
                 baseUrl + "/" + mapping.getShortCode(),
                 mapping.getOriginalUrl(),
                 reused,
+                mapping.getClickCount(),
                 mapping.getCreatedAt()
+        );
+    }
+
+    protected UrlStatsResponse toStatsResponse(UrlMapping mapping) {
+        return new UrlStatsResponse(
+                mapping.getShortCode(),
+                baseUrl + "/" + mapping.getShortCode(),
+                mapping.getOriginalUrl(),
+                mapping.getClickCount(),
+                mapping.getCreatedAt(),
+                mapping.getDisabledAt()
         );
     }
 }

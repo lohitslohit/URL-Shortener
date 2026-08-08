@@ -2,12 +2,12 @@ package com.example.urlshorten.dto;
 
 import java.time.Instant;
 
-public record ShortUrlResponse(
+public record UrlStatsResponse(
         String shortCode,
         String shortUrl,
         String originalUrl,
-        boolean reused,
         long clickCount,
-        Instant createdAt
+        Instant createdAt,
+        Instant disabledAt
 ) {
 }

@@ -45,7 +45,7 @@ class HashUrlServiceImplTest {
         existing.setShortCode("abcd1234");
         existing.setOriginalUrl("https://www.example.com/some/very/long/url");
 
-        when(repository.findByOriginalUrlAndDisabledAtIsNull("https://www.example.com/some/very/long/url"))
+        when(repository.findByActiveOriginalUrl("https://www.example.com/some/very/long/url"))
                 .thenReturn(Optional.of(existing));
 
         ShortUrlResponse response = service.createShortUrl(
@@ -59,7 +59,7 @@ class HashUrlServiceImplTest {
 
     @Test
     void createShortUrl_createsDeterministicCodeForSameCanonicalUrl() {
-        when(repository.findByOriginalUrlAndDisabledAtIsNull("https://www.example.com/some/very/long/url"))
+        when(repository.findByActiveOriginalUrl("https://www.example.com/some/very/long/url"))
                 .thenReturn(Optional.empty());
         when(repository.findByShortCodeAndDisabledAtIsNull(any()))
                 .thenReturn(Optional.empty());

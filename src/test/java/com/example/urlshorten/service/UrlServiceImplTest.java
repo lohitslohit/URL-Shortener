@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.SimpleTransactionStatus;
@@ -51,7 +52,7 @@ class UrlServiceImplTest {
         existing.setShortCode("abc123");
         existing.setOriginalUrl(CANONICAL_EXAMPLE);
 
-        when(repository.findByOriginalUrlAndDisabledAtIsNull(CANONICAL_EXAMPLE))
+        when(repository.findByActiveOriginalUrl(CANONICAL_EXAMPLE))
                 .thenReturn(Optional.of(existing));
 
         ShortUrlResponse response = service.createShortUrl(new CreateShortUrlRequest("https://example.com"));
@@ -62,8 +63,46 @@ class UrlServiceImplTest {
     }
 
     @Test
+    void createShortUrl_ignoresAliasWhenReusingExistingMapping() {
+        UrlMapping existing = new UrlMapping();
+        existing.setShortCode("abc123");
+        existing.setOriginalUrl(CANONICAL_EXAMPLE);
+
+        when(repository.findByActiveOriginalUrl(CANONICAL_EXAMPLE))
+                .thenReturn(Optional.of(existing));
+
+        ShortUrlResponse response = service.createShortUrl(
+                new CreateShortUrlRequest("https://example.com", "newAlias")
+        );
+
+        assertThat(response.shortCode()).isEqualTo("abc123");
+        assertThat(response.reused()).isTrue();
+        verify(repository, never()).save(any());
+        verify(repository, never()).existsByShortCode(any());
+    }
+
+    @Test
+    void createShortUrl_reusesExistingMappingAfterConcurrentConflict() {
+        UrlMapping existing = new UrlMapping();
+        existing.setShortCode("abc123");
+        existing.setOriginalUrl(CANONICAL_EXAMPLE);
+
+        when(repository.findByActiveOriginalUrl(CANONICAL_EXAMPLE))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(existing));
+        when(repository.existsByShortCode(any())).thenReturn(false);
+        when(repository.save(any(UrlMapping.class)))
+                .thenThrow(new DataIntegrityViolationException("active_original_url unique"));
+
+        ShortUrlResponse response = service.createShortUrl(new CreateShortUrlRequest("https://example.com"));
+
+        assertThat(response.shortCode()).isEqualTo("abc123");
+        assertThat(response.reused()).isTrue();
+    }
+
+    @Test
     void createShortUrl_createsNewWhenMissing() {
-        when(repository.findByOriginalUrlAndDisabledAtIsNull(CANONICAL_ORG))
+        when(repository.findByActiveOriginalUrl(CANONICAL_ORG))
                 .thenReturn(Optional.empty());
         when(repository.existsByShortCode(any())).thenReturn(false);
         when(repository.save(any(UrlMapping.class))).thenAnswer(invocation -> {
@@ -82,7 +121,7 @@ class UrlServiceImplTest {
 
     @Test
     void createShortUrl_usesCustomAlias() {
-        when(repository.findByOriginalUrlAndDisabledAtIsNull(CANONICAL_EXAMPLE))
+        when(repository.findByActiveOriginalUrl(CANONICAL_EXAMPLE))
                 .thenReturn(Optional.empty());
         when(repository.existsByShortCode("myAlias")).thenReturn(false);
         when(repository.save(any(UrlMapping.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -97,7 +136,7 @@ class UrlServiceImplTest {
 
     @Test
     void createShortUrl_rejectsReservedAlias() {
-        when(repository.findByOriginalUrlAndDisabledAtIsNull(CANONICAL_EXAMPLE))
+        when(repository.findByActiveOriginalUrl(CANONICAL_EXAMPLE))
                 .thenReturn(Optional.empty());
 
         assertThrows(IllegalArgumentException.class,
@@ -106,7 +145,7 @@ class UrlServiceImplTest {
 
     @Test
     void createShortUrl_rejectsTakenAlias() {
-        when(repository.findByOriginalUrlAndDisabledAtIsNull(CANONICAL_EXAMPLE))
+        when(repository.findByActiveOriginalUrl(CANONICAL_EXAMPLE))
                 .thenReturn(Optional.empty());
         when(repository.existsByShortCode("taken1")).thenReturn(true);
 
@@ -115,17 +154,21 @@ class UrlServiceImplTest {
     }
 
     @Test
-    void resolveOriginalUrl_returnsValue() {
+    void resolveOriginalUrl_returnsValueAndIncrementsClickCount() {
         UrlMapping mapping = new UrlMapping();
         mapping.setShortCode("abc123");
         mapping.setOriginalUrl(CANONICAL_EXAMPLE);
+        mapping.setClickCount(2);
 
         when(repository.findByShortCodeAndDisabledAtIsNull("abc123"))
                 .thenReturn(Optional.of(mapping));
+        when(repository.save(mapping)).thenReturn(mapping);
 
         String originalUrl = service.resolveOriginalUrl("abc123");
 
         assertThat(originalUrl).isEqualTo(CANONICAL_EXAMPLE);
+        assertThat(mapping.getClickCount()).isEqualTo(3);
+        verify(repository).save(mapping);
     }
 
     @Test
@@ -134,6 +177,38 @@ class UrlServiceImplTest {
                 .thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> service.resolveOriginalUrl("missing"));
+    }
+
+    @Test
+    void getStats_returnsClickAnalytics() {
+        UrlMapping mapping = new UrlMapping();
+        mapping.setShortCode("abc123");
+        mapping.setOriginalUrl(CANONICAL_EXAMPLE);
+        mapping.setClickCount(5);
+
+        when(repository.findByShortCode("abc123")).thenReturn(Optional.of(mapping));
+
+        var stats = service.getStats("abc123");
+
+        assertThat(stats.shortCode()).isEqualTo("abc123");
+        assertThat(stats.clickCount()).isEqualTo(5);
+        assertThat(stats.originalUrl()).isEqualTo(CANONICAL_EXAMPLE);
+    }
+
+    @Test
+    void getStats_throwsWhenMissing() {
+        when(repository.findByShortCode("missing")).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> service.getStats("missing"));
+    }
+
+    @Test
+    void createShortUrl_rejectsReservedShortenAlias() {
+        when(repository.findByActiveOriginalUrl(CANONICAL_EXAMPLE))
+                .thenReturn(Optional.empty());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.createShortUrl(new CreateShortUrlRequest("https://example.com", "shorten")));
     }
 
     @Test

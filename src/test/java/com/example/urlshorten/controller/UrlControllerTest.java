@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.urlshorten.dto.ShortUrlResponse;
+import com.example.urlshorten.dto.UrlStatsResponse;
 import com.example.urlshorten.exception.ConflictException;
 import com.example.urlshorten.exception.ResourceNotFoundException;
 import com.example.urlshorten.service.UrlService;
@@ -38,12 +39,13 @@ class UrlControllerTest {
                 "http://localhost:8080/abc123",
                 "https://example.com/",
                 false,
+                0L,
                 Instant.now()
         );
 
         when(urlService.createShortUrl(any())).thenReturn(response);
 
-        mockMvc.perform(post("/api/urls")
+        mockMvc.perform(post("/shorten")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"originalUrl\":\"https://example.com\"}"))
                 .andExpect(status().isCreated())
@@ -57,12 +59,13 @@ class UrlControllerTest {
                 "http://localhost:8080/abc123",
                 "https://example.com/",
                 true,
+                3L,
                 Instant.now()
         );
 
         when(urlService.createShortUrl(any())).thenReturn(response);
 
-        mockMvc.perform(post("/api/urls")
+        mockMvc.perform(post("/shorten")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"originalUrl\":\"https://example.com\"}"))
                 .andExpect(status().isOk())
@@ -71,7 +74,7 @@ class UrlControllerTest {
 
     @Test
     void createShortUrl_returnsBadRequestForInvalidUrl() throws Exception {
-        mockMvc.perform(post("/api/urls")
+        mockMvc.perform(post("/shorten")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"originalUrl\":\"ftp://example.com\"}"))
                 .andExpect(status().isBadRequest())
@@ -80,7 +83,7 @@ class UrlControllerTest {
 
     @Test
     void createShortUrl_returnsBadRequestForInvalidAlias() throws Exception {
-        mockMvc.perform(post("/api/urls")
+        mockMvc.perform(post("/shorten")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"originalUrl\":\"https://example.com\",\"alias\":\"bad alias\"}"))
                 .andExpect(status().isBadRequest())
@@ -89,7 +92,7 @@ class UrlControllerTest {
 
     @Test
     void createShortUrl_returnsBadRequestForMalformedJson() throws Exception {
-        mockMvc.perform(post("/api/urls")
+        mockMvc.perform(post("/shorten")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{not-json"))
                 .andExpect(status().isBadRequest())
@@ -100,7 +103,7 @@ class UrlControllerTest {
     void createShortUrl_returnsConflictWhenAliasTaken() throws Exception {
         when(urlService.createShortUrl(any())).thenThrow(new ConflictException("Alias already taken"));
 
-        mockMvc.perform(post("/api/urls")
+        mockMvc.perform(post("/shorten")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"originalUrl\":\"https://example.com\",\"alias\":\"taken1\"}"))
                 .andExpect(status().isConflict())
@@ -108,12 +111,29 @@ class UrlControllerTest {
     }
 
     @Test
-    void redirect_returnsFoundLocationHeader() throws Exception {
+    void redirect_returnsMovedPermanentlyLocationHeader() throws Exception {
         when(urlService.resolveOriginalUrl("abc123")).thenReturn("https://example.com");
 
         mockMvc.perform(get("/abc123"))
-                .andExpect(status().isFound())
+                .andExpect(status().isMovedPermanently())
                 .andExpect(header().string("Location", "https://example.com"));
+    }
+
+    @Test
+    void stats_returnsClickAnalytics() throws Exception {
+        when(urlService.getStats("abc123")).thenReturn(new UrlStatsResponse(
+                "abc123",
+                "http://localhost:8080/abc123",
+                "https://example.com/",
+                7L,
+                Instant.parse("2026-01-01T00:00:00Z"),
+                null
+        ));
+
+        mockMvc.perform(get("/stats/abc123"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.shortCode").value("abc123"))
+                .andExpect(jsonPath("$.clickCount").value(7));
     }
 
     @Test

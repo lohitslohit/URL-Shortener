@@ -36,6 +36,9 @@ public class UrlMapping {
     @Column(name = "disabled_at")
     private Instant disabledAt;
 
+    @Column(name = "click_count", nullable = false)
+    private long clickCount;
+
     @PrePersist
     void prePersist() {
         this.createdAt = Instant.now();
@@ -79,5 +82,13 @@ public class UrlMapping {
 
     public void setDisabledAt(Instant disabledAt) {
         this.disabledAt = disabledAt;
+    }
+
+    public long getClickCount() {
+        return clickCount;
+    }
+
+    public void setClickCount(long clickCount) {
+        this.clickCount = clickCount;
     }
 }

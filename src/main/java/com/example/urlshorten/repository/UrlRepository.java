@@ -8,7 +8,9 @@ public interface UrlRepository extends JpaRepository<UrlMapping, Long> {
 
 	Optional<UrlMapping> findByShortCodeAndDisabledAtIsNull(String shortCode);
 
-	Optional<UrlMapping> findByOriginalUrlAndDisabledAtIsNull(String originalUrl);
+	Optional<UrlMapping> findByShortCode(String shortCode);
+
+	Optional<UrlMapping> findByActiveOriginalUrl(String activeOriginalUrl);
 
 	boolean existsByShortCode(String shortCode);
 }
